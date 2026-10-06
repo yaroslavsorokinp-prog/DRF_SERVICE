@@ -1,21 +1,24 @@
+from django.core.cache import cache
 from django.db.models import Avg, Count
+
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, viewsets
+
+from rest_framework import filters, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from django.core.cache import cache
+from rest_framework.views import APIView
 
 from .export import export_locations_csv
-from rest_framework.decorators import action
 from .filters import LocationFilter
-from .models import Location
+from .models import Location, LocationSubscription
 from .permissions import IsOwnerOrAdmin
-from .serializers import LocationSerializer
+from .serializers import LocationSerializer, LocationSubscriptionSerializer
 from .services import (
     calculate_location_popularity,
     get_location_views_last_7_days,
-    register_location_view,
     invalidate_location_cache,
+    register_location_view,
 )
 
 
@@ -154,3 +157,32 @@ class LocationViewSet(viewsets.ModelViewSet):
             },
             status=400,
         )
+
+
+class LocationSubscriptionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, location_id):
+        try:
+            location = Location.objects.get(id=location_id)
+        except Location.DoesNotExist:
+            return Response({"detail": "Location not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        subscription, created = LocationSubscription.objects.get_or_create(user=request.user, location=location)
+
+        if not created:
+            return Response({"detail": "You are already subscribed to this location."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = LocationSubscriptionSerializer(subscription)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, location_id):
+        try:
+            subscription = LocationSubscription.objects.get(user=request.user,  location_id=location_id)
+        except LocationSubscription.DoesNotExist:
+            return Response({"detail": "Subscription not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        subscription.delete()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)

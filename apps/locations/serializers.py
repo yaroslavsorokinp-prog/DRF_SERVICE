@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Location
+from .models import Location, LocationSubscription
 
 
 class LocationSerializer(serializers.ModelSerializer):
@@ -41,3 +41,10 @@ class LocationSerializer(serializers.ModelSerializer):
             "updated_at",
             "popularity",
         ]
+
+
+class LocationSubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LocationSubscription
+        fields = ["id", "location", "created_at"]
+        read_only_fields = ["id", "created_at"]

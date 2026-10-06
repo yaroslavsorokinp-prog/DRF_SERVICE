@@ -46,3 +46,29 @@ class Location(models.Model):
     def soft_delete(self):
         self.is_deleted = True
         self.save(update_fields=["is_deleted", "updated_at"])
+
+
+class LocationSubscription(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="location_subscriptions",
+    )
+    location = models.ForeignKey(
+        Location,
+        on_delete=models.CASCADE,
+        related_name="subscriptions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "location"],
+                name="unique_location_subscription",
+            ),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user} -> {self.location}"
