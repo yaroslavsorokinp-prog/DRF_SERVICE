@@ -62,10 +62,7 @@ class PasswordResetRequestView(APIView):
         email = request.data.get("email")
 
         if not email:
-            return Response(
-                {"detail": "Email is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         users = User.objects.filter(email=email, is_active=True)
 
@@ -85,10 +82,7 @@ class PasswordResetRequestView(APIView):
                 recipient_list=[user.email],
             )
 
-        return Response(
-            {"detail": "If an account with this email exists, a reset link has been sent."},
-            status=status.HTTP_200_OK,
-        )
+        return Response({"detail": "If an account with this email exists, a reset link has been sent."}, status=status.HTTP_200_OK)
 
 
 class PasswordResetConfirmView(APIView):
@@ -98,30 +92,18 @@ class PasswordResetConfirmView(APIView):
         new_password = request.data.get("new_password")
 
         if not new_password:
-            return Response(
-                {"detail": "New password is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "New password is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             uid = urlsafe_base64_decode(uidb64).decode()
             user = User.objects.get(pk=uid)
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            return Response(
-                {"detail": "Invalid reset link."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Invalid reset link."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not default_token_generator.check_token(user, token):
-            return Response(
-                {"detail": "Invalid or expired reset link."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Invalid or expired reset link."}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
         user.save(update_fields=["password"])
 
-        return Response(
-            {"detail": "Password has been reset successfully."},
-            status=status.HTTP_200_OK,
-        )
+        return Response({"detail": "Password has been reset successfully."}, status=status.HTTP_200_OK)

@@ -83,17 +83,9 @@ class LocationViewSet(viewsets.ModelViewSet):
         if ordering in ["popularity", "-popularity"]:
             queryset = self.get_queryset()
 
-            queryset = DjangoFilterBackend().filter_queryset(
-                request,
-                queryset,
-                self,
-            )
+            queryset = DjangoFilterBackend().filter_queryset(request, queryset, self)
 
-            queryset = filters.SearchFilter().filter_queryset(
-                request,
-                queryset,
-                self,
-            )
+            queryset = filters.SearchFilter().filter_queryset(request, queryset, self)
         else:
             queryset = self.filter_queryset(self.get_queryset())
 
@@ -102,11 +94,7 @@ class LocationViewSet(viewsets.ModelViewSet):
         for location in locations:
             views = get_location_views_last_7_days(location.id)
 
-            location.popularity = calculate_location_popularity(
-                location.rating,
-                location.reviews_count,
-                views,
-            )
+            location.popularity = calculate_location_popularity(location.rating, location.reviews_count, views)
 
         if ordering == "-popularity":
             locations.sort(key=lambda location: location.popularity, reverse=True)
