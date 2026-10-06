@@ -1,0 +1,7 @@
+Django
+djangorestframework
+django-filter
+psycopg2-binary
+redis
+django-redis
+pandas
