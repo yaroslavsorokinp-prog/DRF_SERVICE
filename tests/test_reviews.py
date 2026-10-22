@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.core import mail
+from unittest.mock import patch
 
+from redis.exceptions import RedisError
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -214,6 +216,37 @@ class ReviewAPITests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+    @patch(
+        "apps.locations.services.cache.delete_pattern",
+        side_effect=RedisError("Redis unavailable"),
+    )
+    def test_review_creation_succeeds_when_cache_is_unavailable(self, mock_delete_pattern):
+        reviewer = User.objects.create_user(
+            username="cache_failure_reviewer",
+            password="password123",
+        )
+        self.client.force_authenticate(user=reviewer)
+
+        response = self.client.post(
+            "/api/reviews/",
+            {
+                "location": self.location.id,
+                "rating": 5,
+                "comment": "Отзыв при недоступном Redis",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(
+            Review.objects.filter(
+                location=self.location,
+                author=reviewer,
+            ).exists()
+        )
+        mock_delete_pattern.assert_called_once_with("locations:list:*")
 
     def test_review_sends_email_to_location_author(self):
         self.location.author.email = "owner@example.com"
