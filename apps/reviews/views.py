@@ -8,10 +8,15 @@ from apps.locations.models import LocationSubscription
 
 from .models import Review, ReviewVote
 from .permissions import IsReviewAuthorOrAdmin
-from .serializers import ReviewSerializer, ReviewVoteSerializer
+from .serializers import (
+    ReviewSerializer,
+    ReviewVoteActionSerializer,
+    ReviewVoteSerializer,
+)
 
 from django.core.mail import send_mail
 from django.conf import settings
+from django.db import transaction
 
 
 def send_review_notifications(review):
@@ -63,22 +68,45 @@ class ReviewViewSet(viewsets.ModelViewSet):
 class ReviewVoteView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request, review_id):
-        if not Review.objects.filter(id=review_id).exists():
-            return Response({"detail": "Review not found."}, status=status.HTTP_404_NOT_FOUND)
+        review = Review.objects.select_for_update().filter(pk=review_id).first()
+        if review is None:
+            return Response(
+                {"detail": "Review not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-        if ReviewVote.objects.filter(review_id=review_id, user=request.user).exists():
-            return Response({"detail": "You have already voted for this review."}, status=status.HTTP_400_BAD_REQUEST)
+        input_serializer = ReviewVoteActionSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        vote_type = input_serializer.validated_data["vote"]
 
-        serializer = ReviewVoteSerializer(
-            data={
-                "review": review_id,
-                "vote": request.data.get("vote"),
-            }
+        vote = ReviewVote.objects.filter(
+            review=review,
+            user=request.user,
+        ).first()
+
+        if vote is not None:
+            if vote.vote == vote_type:
+                vote.delete()
+                return Response(
+                    {"detail": "Vote removed."},
+                    status=status.HTTP_200_OK,
+                )
+
+            vote.vote = vote_type
+            vote.save(update_fields=["vote"])
+            return Response(
+                ReviewVoteSerializer(vote).data,
+                status=status.HTTP_200_OK,
+            )
+
+        vote = ReviewVote.objects.create(
+            review=review,
+            user=request.user,
+            vote=vote_type,
         )
-
-        serializer.is_valid(raise_exception=True)
-
-        vote = serializer.save(user=request.user)
-
-        return Response(ReviewVoteSerializer(vote).data, status=status.HTTP_201_CREATED)
+        return Response(
+            ReviewVoteSerializer(vote).data,
+            status=status.HTTP_201_CREATED,
+        )
