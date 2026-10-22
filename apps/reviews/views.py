@@ -1,10 +1,16 @@
-from rest_framework import status, viewsets
+import logging
+
+from django.conf import settings
+from django.core.mail import send_mail
+from django.db import IntegrityError, transaction
+
+from rest_framework import serializers, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.locations.services import invalidate_location_cache
 from apps.locations.models import LocationSubscription
+from apps.locations.services import invalidate_location_cache
 
 from .models import Review, ReviewVote
 from .permissions import IsReviewAuthorOrAdmin
@@ -14,9 +20,8 @@ from .serializers import (
     ReviewVoteSerializer,
 )
 
-from django.core.mail import send_mail
-from django.conf import settings
-from django.db import transaction
+
+logger = logging.getLogger(__name__)
 
 
 def send_review_notifications(review):
@@ -60,7 +65,22 @@ class ReviewViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsReviewAuthorOrAdmin]
 
     def perform_create(self, serializer):
-        review = serializer.save(author=self.request.user)
+        try:
+            with transaction.atomic():
+                review = serializer.save(author=self.request.user)
+        except IntegrityError:
+            # The database constraint is the final guard against two
+            # simultaneous requests creating a review for the same location.
+            duplicate_exists = Review.objects.filter(
+                location=serializer.validated_data["location"],
+                author=self.request.user,
+            ).exists()
+            if duplicate_exists:
+                raise serializers.ValidationError(
+                    {"detail": "You have already reviewed this location."}
+                )
+            raise
+
         invalidate_location_cache()
         send_review_notifications(review)
 
