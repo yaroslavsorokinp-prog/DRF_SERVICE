@@ -61,3 +61,7 @@ class ReviewVoteSerializer(serializers.ModelSerializer):
             "id",
             "created_at",
         ]
+
+class ReviewVoteActionSerializer(serializers.Serializer):
+    vote = serializers.ChoiceField(choices=ReviewVote.VoteType.choices)
+
