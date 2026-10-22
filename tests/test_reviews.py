@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 
 from apps.categories.models import Category
 from apps.locations.models import Location, LocationSubscription
-from apps.reviews.models import Review
+from apps.reviews.models import Review, ReviewVote
 
 
 User = get_user_model()
@@ -149,27 +149,71 @@ class ReviewAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
 
-    def test_user_cannot_vote_twice_for_same_review(self):
+    def test_user_can_change_like_to_dislike(self):
         self.client.force_authenticate(user=self.other_user)
+        url = f"/api/reviews/{self.review.id}/vote/"
 
         first_response = self.client.post(
-            f"/api/reviews/{self.review.id}/vote/",
-            {"vote": "like"},
-            format="json",
+            url, {"vote": "like"}, format="json"
         )
-
         self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
 
         second_response = self.client.post(
+            url, {"vote": "dislike"}, format="json"
+        )
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(second_response.data["vote"], "dislike")
+        self.assertEqual(
+            ReviewVote.objects.filter(
+                review=self.review,
+                user=self.other_user,
+            ).count(),
+            1,
+        )
+
+    def test_user_can_change_dislike_to_like(self):
+        self.client.force_authenticate(user=self.other_user)
+        url = f"/api/reviews/{self.review.id}/vote/"
+
+        self.client.post(url, {"vote": "dislike"}, format="json")
+        response = self.client.post(url, {"vote": "like"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["vote"], "like")
+        self.assertEqual(
+            ReviewVote.objects.filter(
+                review=self.review,
+                user=self.other_user,
+            ).count(),
+            1,
+        )
+
+    def test_user_can_remove_vote_by_repeating_same_vote(self):
+        self.client.force_authenticate(user=self.other_user)
+        url = f"/api/reviews/{self.review.id}/vote/"
+
+        self.client.post(url, {"vote": "like"}, format="json")
+        response = self.client.post(url, {"vote": "like"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["detail"], "Vote removed.")
+        self.assertFalse(
+            ReviewVote.objects.filter(
+                review=self.review,
+                user=self.other_user,
+            ).exists()
+        )
+
+    def test_vote_rejects_invalid_vote_type(self):
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.post(
             f"/api/reviews/{self.review.id}/vote/",
-            {"vote": "dislike"},
+            {"vote": "maybe"},
             format="json",
         )
 
-        self.assertEqual(
-            second_response.status_code,
-            status.HTTP_400_BAD_REQUEST,
-        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_review_sends_email_to_location_author(self):
         self.location.author.email = "owner@example.com"
