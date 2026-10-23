@@ -85,12 +85,16 @@ class ReviewViewSet(viewsets.ModelViewSet):
         send_review_notifications(review)
 
 
+
 class ReviewVoteView(APIView):
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
     def post(self, request, review_id):
-        review = Review.objects.select_for_update().filter(pk=review_id).first()
+        review = Review.objects.select_for_update().filter(
+            pk=review_id
+        ).first()
+
         if review is None:
             return Response(
                 {"detail": "Review not found."},
@@ -116,6 +120,7 @@ class ReviewVoteView(APIView):
 
             vote.vote = vote_type
             vote.save(update_fields=["vote"])
+
             return Response(
                 ReviewVoteSerializer(vote).data,
                 status=status.HTTP_200_OK,
@@ -126,7 +131,9 @@ class ReviewVoteView(APIView):
             user=request.user,
             vote=vote_type,
         )
+
         return Response(
             ReviewVoteSerializer(vote).data,
             status=status.HTTP_201_CREATED,
         )
+

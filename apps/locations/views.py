@@ -151,12 +151,7 @@ class LocationViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(locations, many=True)
             return Response(serializer.data)
 
-        return Response(
-            {
-                "detail": "Unsupported export format. Use json or csv."
-            },
-            status=400,
-        )
+        return Response({"detail": "Unsupported export format. Use json or csv."}, status=400)
 
 
 class LocationSubscriptionView(APIView):
