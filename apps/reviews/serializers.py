@@ -1,7 +1,5 @@
 from rest_framework import serializers
 
-from apps.locations.models import Location
-
 from .models import Review, ReviewVote
 
 
@@ -28,7 +26,9 @@ class ReviewSerializer(serializers.ModelSerializer):
 
     def validate_location(self, value):
         if value.is_deleted:
-            raise serializers.ValidationError("Cannot create a review for a deleted location.")
+            raise serializers.ValidationError(
+                "Cannot create a review for a deleted location."
+            )
 
         return value
 
@@ -40,10 +40,27 @@ class ReviewSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context["request"]
-        location = attrs["location"]
+        location = attrs.get(
+            "location",
+            self.instance.location if self.instance is not None else None,
+        )
 
-        if Review.objects.filter(location=location, author=request.user).exists():
-            raise serializers.ValidationError("You have already reviewed this location.")
+        # PATCH requests may omit location. Existing reviews should not
+        # conflict with themselves during PUT/PATCH validation.
+        if location is None:
+            return attrs
+
+        duplicate_reviews = Review.objects.filter(
+            location=location,
+            author=request.user,
+        )
+        if self.instance is not None:
+            duplicate_reviews = duplicate_reviews.exclude(pk=self.instance.pk)
+
+        if duplicate_reviews.exists():
+            raise serializers.ValidationError(
+                "You have already reviewed this location."
+            )
 
         return attrs
 
@@ -62,6 +79,6 @@ class ReviewVoteSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
+
 class ReviewVoteActionSerializer(serializers.Serializer):
     vote = serializers.ChoiceField(choices=ReviewVote.VoteType.choices)
-
