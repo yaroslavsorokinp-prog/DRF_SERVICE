@@ -19,6 +19,7 @@ from .services import (
     get_location_views_last_7_days,
     invalidate_location_cache,
     register_location_view,
+    get_location_views_bulk,
 )
 
 
@@ -85,35 +86,51 @@ class LocationViewSet(viewsets.ModelViewSet):
 
         if ordering in ["popularity", "-popularity"]:
             queryset = self.get_queryset()
-
             queryset = DjangoFilterBackend().filter_queryset(request, queryset, self)
-
             queryset = filters.SearchFilter().filter_queryset(request, queryset, self)
+
+            locations = list(queryset)
+
+            views_by_location = get_location_views_bulk([location.id for location in locations])
+
+            for location in locations:
+                location.popularity = calculate_location_popularity(
+                    location.rating,
+                    location.reviews_count,
+                    views_by_location[location.id],
+                )
+
+            locations.sort(key=lambda location: location.popularity, reverse=ordering == "-popularity")
+
+            page = self.paginate_queryset(locations)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                response_data = self.get_paginated_response(serializer.data).data
+            else:
+                response_data = self.get_serializer(locations, many=True).data
+
         else:
             queryset = self.filter_queryset(self.get_queryset())
 
-        locations = list(queryset)
+            page = self.paginate_queryset(queryset)
+            locations = list(page if page is not None else queryset)
 
-        for location in locations:
-            views = get_location_views_last_7_days(location.id)
+            views_by_location = get_location_views_bulk([location.id for location in locations])
 
-            location.popularity = calculate_location_popularity(location.rating, location.reviews_count, views)
+            for location in locations:
+                location.popularity = calculate_location_popularity(
+                    location.rating,
+                    location.reviews_count,
+                    views_by_location[location.id],
+                )
 
-        if ordering == "-popularity":
-            locations.sort(key=lambda location: location.popularity, reverse=True)
-        elif ordering == "popularity":
-            locations.sort(key=lambda location: location.popularity)
-
-        page = self.paginate_queryset(locations)
-
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            response_data = self.get_paginated_response(serializer.data).data
-        else:
-            response_data = self.get_serializer(locations, many=True).data
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                response_data = self.get_paginated_response(serializer.data).data
+            else:
+                response_data = self.get_serializer(locations, many=True).data
 
         cache.set(cache_key, response_data, timeout=60)
-
         return Response(response_data)
 
     def perform_create(self, serializer):
@@ -133,13 +150,13 @@ class LocationViewSet(viewsets.ModelViewSet):
     def export(self, request):
         locations = self.filter_queryset(self.get_queryset())
 
-        for location in locations:
-            views = get_location_views_last_7_days(location.id)
+        views_by_location = get_location_views_bulk([location.id for location in locations])
 
+        for location in locations:
             location.popularity = calculate_location_popularity(
                 rating=location.rating,
                 reviews_count=location.reviews_count,
-                views_last_7_days=views,
+                views_last_7_days=views_by_location[location.id],
             )
 
         export_format = request.query_params.get("export_format", "json")

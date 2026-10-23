@@ -74,3 +74,32 @@ def invalidate_location_cache():
         cache.delete_pattern("locations:list:*")
     except (ConnectionInterrupted, RedisError, TimeoutError):
         logger.exception("Could not invalidate the locations list cache")
+
+
+def get_location_views_bulk(location_ids):
+    if not location_ids:
+        return {}
+
+    redis = get_redis_connection("default")
+
+    now = int(time.time())
+    seven_days_ago = now - VIEWS_7_DAYS
+
+    pipeline = redis.pipeline(transaction=False)
+
+    for location_id in location_ids:
+        views_key = f"location:{location_id}:views"
+
+        pipeline.zremrangebyscore(
+            views_key,
+            0,
+            seven_days_ago,
+        )
+        pipeline.zcard(views_key)
+
+    results = pipeline.execute()
+
+    return {
+        location_id: results[index * 2 + 1]
+        for index, location_id in enumerate(location_ids)
+    }
