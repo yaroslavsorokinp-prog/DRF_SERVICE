@@ -8,7 +8,10 @@ from rest_framework.test import APITestCase
 
 from apps.categories.models import Category
 from apps.locations.models import Location
-from apps.locations.services import register_location_view
+from apps.locations.services import (
+    get_location_views_bulk,
+    register_location_view,
+)
 
 User = get_user_model()
 
@@ -191,3 +194,114 @@ class RegisterLocationViewTests(TestCase):
         self.assertFalse(result)
         redis.zadd.assert_not_called()
         redis.expire.assert_not_called()
+
+
+class LocationViewsBulkTests(TestCase):
+    @patch("apps.locations.services.get_redis_connection")
+    def test_bulk_views_uses_pipeline_and_maps_results(self, mock_get_redis):
+        redis = mock_get_redis.return_value
+        pipeline = redis.pipeline.return_value
+        pipeline.execute.return_value = [2, 3, 4, 5]
+
+        result = get_location_views_bulk([10, 20])
+
+        redis.pipeline.assert_called_once_with(transaction=False)
+
+        calls = pipeline.zremrangebyscore.call_args_list
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(
+            [call.args[0] for call in calls],
+            ["location:10:views", "location:20:views"],
+        )
+        self.assertTrue(all(call.args[1] == 0 for call in calls))
+        self.assertEqual(
+            [call.args[0] for call in pipeline.zcard.call_args_list],
+            ["location:10:views", "location:20:views"],
+        )
+
+        pipeline.zcard.assert_any_call("location:10:views")
+        pipeline.zcard.assert_any_call("location:20:views")
+        pipeline.execute.assert_called_once_with()
+
+        self.assertEqual(result, {10: 3, 20: 5})
+
+    @patch("apps.locations.services.get_redis_connection")
+    def test_empty_location_ids_do_not_connect_to_redis(self, mock_get_redis):
+        result = get_location_views_bulk([])
+
+        self.assertEqual(result, {})
+        mock_get_redis.assert_not_called()
+
+
+class LocationViewsPaginationTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="pagination_user",
+            password="TestPassword123",
+        )
+        self.category = Category.objects.create(
+            name="Тестовая категория",
+            description="Для тестирования пагинации",
+        )
+
+        self.locations = [
+            Location.objects.create(
+                category=self.category,
+                author=self.user,
+                name=f"Локация {index}",
+                description="Описание",
+                address=f"Адрес {index}",
+                latitude=48.464700,
+                longitude=35.046200,
+            )
+            for index in range(12)
+        ]
+
+    @patch("apps.locations.views.get_location_views_bulk")
+    @patch("apps.locations.views.cache.set")
+    @patch("apps.locations.views.cache.get", return_value=None)
+    def test_regular_list_counts_views_only_for_current_page(
+        self,
+        mock_cache_get,
+        mock_cache_set,
+        mock_get_views,
+    ):
+        mock_get_views.side_effect = lambda ids: {location_id: 0 for location_id in ids}
+
+        response = self.client.get("/api/locations/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        page_ids = [item["id"] for item in response.data["results"]]
+
+        self.assertEqual(len(page_ids), 10)
+        mock_get_views.assert_called_once_with(page_ids)
+
+    @patch("apps.locations.views.get_location_views_bulk")
+    @patch("apps.locations.views.cache.set")
+    @patch("apps.locations.views.cache.get", return_value=None)
+    def test_popularity_sort_calculates_all_locations_before_pagination(
+        self,
+        mock_cache_get,
+        mock_cache_set,
+        mock_get_views,
+    ):
+        all_ids = [location.id for location in self.locations]
+        mock_get_views.side_effect = lambda ids: {
+            location_id: location_id for location_id in ids
+        }
+
+        response = self.client.get("/api/locations/?ordering=-popularity")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        mock_get_views.assert_called_once()
+        requested_ids = mock_get_views.call_args.args[0]
+
+        self.assertEqual(set(requested_ids), set(all_ids))
+
+        page_ids = [item["id"] for item in response.data["results"]]
+
+        self.assertEqual(len(page_ids), 10)
+        self.assertEqual(page_ids, sorted(all_ids, reverse=True)[:10])
