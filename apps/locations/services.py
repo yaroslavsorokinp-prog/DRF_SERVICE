@@ -23,24 +23,28 @@ def get_viewer_key(request):
     return f"session:{request.session.session_key}"
 
 
+
 def register_location_view(location_id, request):
     redis = get_redis_connection("default")
 
     viewer_key = get_viewer_key(request)
-
     throttle_key = f"location:{location_id}:viewed:{viewer_key}"
-
     views_key = f"location:{location_id}:views"
-
-    if redis.exists(throttle_key):
-        return False
 
     now = int(time.time())
     view_id = f"{viewer_key}:{now}"
 
-    redis.zadd(views_key, {view_id: now})
-    redis.expire(views_key, VIEWS_7_DAYS)
-    redis.set(throttle_key, "1", ex=VIEW_TTL)
+    created = redis.set(throttle_key, "1", nx=True, ex=VIEW_TTL)
+
+    if not created:
+        return False
+
+    try:
+        redis.zadd(views_key, {view_id: now})
+        redis.expire(views_key, VIEWS_7_DAYS)
+    except RedisError:
+        redis.delete(throttle_key)
+        raise
 
     return True
 
@@ -69,6 +73,4 @@ def invalidate_location_cache():
     try:
         cache.delete_pattern("locations:list:*")
     except (ConnectionInterrupted, RedisError, TimeoutError):
-        # Cache invalidation is best-effort: Redis being unavailable must not
-        # turn a successfully saved location/review into an API error.
         logger.exception("Could not invalidate the locations list cache")

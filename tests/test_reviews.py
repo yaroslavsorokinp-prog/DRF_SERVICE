@@ -10,7 +10,6 @@ from apps.categories.models import Category
 from apps.locations.models import Location, LocationSubscription
 from apps.reviews.models import Review, ReviewVote
 
-
 User = get_user_model()
 
 
@@ -50,7 +49,6 @@ class ReviewAPITests(APITestCase):
             comment="Отличное место!",
         )
 
-
     def test_authenticated_user_can_create_review(self):
         self.client.force_authenticate(user=self.other_user)
 
@@ -75,7 +73,6 @@ class ReviewAPITests(APITestCase):
                 author=self.other_user,
             ).exists()
         )
-
 
     def test_user_cannot_create_duplicate_review(self):
         Review.objects.create(
@@ -102,7 +99,6 @@ class ReviewAPITests(APITestCase):
             status.HTTP_400_BAD_REQUEST,
         )
 
-
     def test_rating_must_be_between_1_and_5(self):
         self.client.force_authenticate(user=self.other_user)
 
@@ -121,7 +117,6 @@ class ReviewAPITests(APITestCase):
             status.HTTP_400_BAD_REQUEST,
         )
 
-
     def test_anonymous_user_cannot_create_review(self):
         response = self.client.post(
             "/api/reviews/",
@@ -138,7 +133,6 @@ class ReviewAPITests(APITestCase):
             status.HTTP_403_FORBIDDEN,
         )
 
-
     def test_authenticated_user_can_vote_for_review(self):
         self.client.force_authenticate(user=self.other_user)
 
@@ -150,19 +144,14 @@ class ReviewAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-
     def test_user_can_change_like_to_dislike(self):
         self.client.force_authenticate(user=self.other_user)
         url = f"/api/reviews/{self.review.id}/vote/"
 
-        first_response = self.client.post(
-            url, {"vote": "like"}, format="json"
-        )
+        first_response = self.client.post(url, {"vote": "like"}, format="json")
         self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
 
-        second_response = self.client.post(
-            url, {"vote": "dislike"}, format="json"
-        )
+        second_response = self.client.post(url, {"vote": "dislike"}, format="json")
         self.assertEqual(second_response.status_code, status.HTTP_200_OK)
         self.assertEqual(second_response.data["vote"], "dislike")
         self.assertEqual(
@@ -217,12 +206,13 @@ class ReviewAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-
     @patch(
         "apps.locations.services.cache.delete_pattern",
         side_effect=RedisError("Redis unavailable"),
     )
-    def test_review_creation_succeeds_when_cache_is_unavailable(self, mock_delete_pattern):
+    def test_review_creation_succeeds_when_cache_is_unavailable(
+        self, mock_delete_pattern
+    ):
         reviewer = User.objects.create_user(
             username="cache_failure_reviewer",
             password="password123",
@@ -313,14 +303,10 @@ class ReviewAPITests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(mail.outbox), 2)
 
-        recipients = {
-            email.to[0]
-            for email in mail.outbox
-        }
+        recipients = {email.to[0] for email in mail.outbox}
 
         self.assertIn("owner@example.com", recipients)
         self.assertIn("subscriber@example.com", recipients)
-
 
     def test_review_sends_email_to_all_subscribers(self):
         subscriber1 = User.objects.create_user(
@@ -364,14 +350,10 @@ class ReviewAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
 
-        recipients = {
-            email.to[0]
-            for email in mail.outbox
-        }
+        recipients = {email.to[0] for email in mail.outbox}
 
         self.assertIn("subscriber1@example.com", recipients)
         self.assertIn("subscriber2@example.com", recipients)
-
 
     def test_location_author_does_not_receive_duplicate_email(self):
         self.location.author.email = "owner@example.com"
@@ -401,16 +383,12 @@ class ReviewAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
 
-        recipients = [
-            email.to[0]
-            for email in mail.outbox
-        ]
+        recipients = [email.to[0] for email in mail.outbox]
 
         self.assertEqual(
             recipients.count("owner@example.com"),
             1,
         )
-
 
     def test_review_does_not_fail_for_subscriber_without_email(self):
         subscriber = User.objects.create_user(

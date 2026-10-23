@@ -6,7 +6,6 @@ from rest_framework.test import APITestCase
 from apps.categories.models import Category
 from apps.locations.models import Location, LocationSubscription
 
-
 User = get_user_model()
 
 
